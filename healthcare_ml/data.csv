@@ -1,0 +1,62 @@
+# disease_predictor_starter.py
+# Run: pip install pandas scikit-learn xgboost shap streamlit
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, top_k_accuracy_score
+import joblib
+import shap
+
+# 1) Load data (replace 'data.csv' with your dataset)
+df = pd.read_csv("data.csv")  # expected: symptom columns (0/1) + 'disease' label
+
+# Quick check
+print("Rows:", len(df), "Columns:", df.shape[1])
+print(df['disease'].value_counts().head())
+
+# 2) Prepare features/labels
+y = df['disease']
+X = df.drop(columns=['disease'])
+
+# If any non-binary symptom columns exist, convert/encode them appropriately here.
+
+# 3) Train / test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, 
+                                                    test_size=0.2, 
+                                                    random_state=42,
+                                                    stratify=y)
+
+# 4) Build pipeline (scaling only for numerical columns; RandomForest handles binary features fine)
+model = Pipeline([
+    ("scaler", StandardScaler()),             # if you have numeric lab values; harmless for binary
+    ("clf", RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1))
+])
+
+# 5) Train
+model.fit(X_train, y_train)
+
+# 6) Evaluate
+y_pred = model.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("Top-3 accuracy (if multi-class):", end=" ")
+try:
+    print(top_k_accuracy_score(y_test, model.predict_proba(X_test), k=3))
+except Exception:
+    print("N/A (model may not support predict_proba for all classes)")
+
+print(classification_report(y_test, y_pred))
+
+# 7) Save model
+joblib.dump(model, "disease_model.pkl")
+
+# 8) SHAP explainability (summary on training set)
+explainer = shap.TreeExplainer(model.named_steps['clf'])
+# we need to pass the preprocessed features to explainer (scale + clf)
+X_train_trans = model.named_steps['scaler'].transform(X_train)
+shap_values = explainer.shap_values(X_train_trans)  # list per class
+# To visualize summary (run in notebook)
+# shap.summary_plot(shap_values, X_train_trans, feature_names=X_train.columns)
